@@ -3,11 +3,6 @@
 @section('content')
     <h1 style="margin-bottom: 20px;">ورود / ثبت نام</h1>
 
-    {{-- پیام خطا --}}
-    @if (session('error'))
-        <div style="color: red; margin-bottom: 10px;">{{ session('error') }}</div>
-    @endif
-
     {{-- فرم ارسال شماره موبایل --}}
     <form method="POST" action="{{ route('send.code') }}" id="phone-form">
         @csrf
@@ -31,34 +26,6 @@
         @error('phone')
             <div style="color: red; margin-top: 5px;">{{ $message }}</div>
         @enderror
-
-        {{-- نمایش شمارش معکوس اگر کاربر بلاک باشد --}}
-        @if (session('blocked_until'))
-            @php
-                $blockedSeconds = session('blocked_until') - now()->timestamp;
-            @endphp
-            @if ($blockedSeconds > 0)
-                <div style="color: orange; margin-top: 10px;" id="block-message">
-                    لطفاً تا <span id="countdown">{{ gmdate('i:s', $blockedSeconds) }}</span> دیگر صبر کنید.
-                </div>
-                <script>
-                    let remaining = {{ $blockedSeconds }};
-                    const countdownEl = document.getElementById('countdown');
-
-                    const interval = setInterval(() => {
-                        remaining--;
-                        if (remaining <= 0) {
-                            clearInterval(interval);
-                            document.getElementById('block-message').innerText = "محدودیت زمانی به پایان رسید. لطفاً فرم را دوباره ارسال کنید.";
-                        } else {
-                            const minutes = String(Math.floor(remaining / 60)).padStart(2, '0');
-                            const seconds = String(remaining % 60).padStart(2, '0');
-                            countdownEl.innerText = minutes + ':' + seconds;
-                        }
-                    }, 1000);
-                </script>
-            @endif
-        @endif
 
         {{-- کپچا --}}
         <div style="margin-top: 20px; display: flex; align-items: center;">

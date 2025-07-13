@@ -7,6 +7,7 @@ use App\Models\VerificationCode;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
+use App\Helpers\UserLogger;
 use Carbon\Carbon;
 
 class AuthController extends Controller
@@ -19,56 +20,51 @@ class AuthController extends Controller
     public function sendCode(Request $request)
     {
         $request->validate([
-            'phone' => ['required', 'regex:/^9\d{9}$/'],
-            'captcha' => ['required', 'captcha'],
-        ], [
-            'captcha.captcha' => 'کد امنیتی صحیح نیست.',
-            'phone.regex' => 'شماره موبایل باید ۱۰ رقم و با 9 شروع شود.',
+            'phone' => 'required|regex:/^9\d{9}$/',
+            'captcha' => 'required|captcha',
         ]);
 
-        $phone = $request->phone;
+        $phone = ltrim($request->phone, '0');
 
-        // بررسی محدودیت ارسال برای این شماره در دیتابیس (۱۰ دقیقه)
         $recentCode = VerificationCode::where('phone', $phone)
             ->where('created_at', '>=', now()->subMinutes(10))
-            ->latest()
             ->first();
 
-        // بررسی محدودیت ارسال در مرورگر (session)
-        $lastSent = session('last_code_sent_at');
-        if ($recentCode || ($lastSent && now()->diffInMinutes(Carbon::parse($lastSent)) < 10)) {
-            $blockedUntil = Carbon::parse($lastSent ?? $recentCode->created_at)->addMinutes(10);
-            session(['blocked_until' => $blockedUntil->timestamp]);
-            return back()->withErrors(['phone' => 'کد قبلاً ارسال شده است. لطفاً تا ۱۰ دقیقه دیگر مجدد تلاش کنید.']);
+        if ($recentCode) {
+            $remainingSeconds = $recentCode->created_at->addMinutes(10)->diffInSeconds(now());
+            $minutes = floor($remainingSeconds / 60);
+            $seconds = $remainingSeconds % 60;
+
+            // لاگ تلاش برای ارسال کد در فاصله محدود
+            UserLogger::log('send_code_blocked', "ارسال مجدد کد برای شماره $phone محدود شد.");
+
+            return back()->withErrors([
+                'phone' => "برای این شماره قبلاً کد ارسال شده است. لطفاً {$minutes} دقیقه و {$seconds} ثانیه دیگر صبر کنید."
+            ])->withInput();
         }
 
-        // تولید کد 6 رقمی
         $code = rand(100000, 999999);
-        $expiresAt = Carbon::now()->addMinutes(2);  // اعتبار کد ۲ دقیقه
 
         VerificationCode::create([
             'phone' => $phone,
             'code' => $code,
-            'expires_at' => $expiresAt,
-            'is_expired' => false,
+            'expires_at' => now()->addMinutes(5),
+            'ip_address' => $request->ip(),
         ]);
 
-        logger("کد تایید برای شماره $phone : $code");
+        session(['verify_phone' => $phone]);
 
-        session([
-            'phone' => $phone,
-            'last_code_sent_at' => now(),
-            'blocked_until' => now()->addMinutes(10)->timestamp,
-        ]);
+        // ✅ لاگ ارسال کد تأیید
+        UserLogger::log('send_code', "کد $code برای شماره $phone ارسال شد.");
 
-        return redirect()->route('verify.form')->with('success', 'کد تایید ارسال شد.');
+        return redirect()->route('verify.form')->with('success', 'کد تأیید ارسال شد.');
     }
 
     public function showVerifyForm()
     {
-        $phone = session('phone');
+        $phone = session('verify_phone');
         if (!$phone) {
-            return redirect()->route('phone.form')->with('error', 'لطفا ابتدا شماره موبایل خود را وارد کنید.');
+            return redirect()->route('phone.form')->with('error', 'ابتدا شماره موبایل را وارد کنید.');
         }
         return view('auth.verify', compact('phone'));
     }
@@ -76,72 +72,88 @@ class AuthController extends Controller
     public function verifyCode(Request $request)
     {
         $request->validate([
-            'phone' => ['required', 'regex:/^9\d{9}$/'],
-            'code' => ['required', 'digits:6'],
-            'captcha' => ['required', 'captcha'],
-        ], [
-            'captcha.captcha' => 'کد امنیتی صحیح نیست.',
-            'phone.regex' => 'شماره موبایل باید ۱۰ رقم و با 9 شروع شود.',
-            'code.digits' => 'کد تایید باید ۶ رقم باشد.',
+            'phone' => 'required|regex:/^9\d{9}$/',
+            'code' => 'required|digits:6',
+            'captcha' => 'required|captcha',
         ]);
 
         $verification = VerificationCode::where('phone', $request->phone)
             ->where('code', $request->code)
             ->where('is_expired', false)
-            ->where('expires_at', '>', Carbon::now())
+            ->where('expires_at', '>', now())
             ->first();
 
         if (!$verification) {
-            return back()->withErrors(['code' => 'کد تایید نامعتبر، منقضی یا استفاده شده است.']);
+            // ✅ لاگ تلاش ناموفق تأیید کد
+            UserLogger::log('verify_failed', "کد اشتباه یا منقضی برای شماره {$request->phone}");
+            return back()->withErrors(['code' => 'کد تایید نامعتبر، منقضی یا استفاده شده است.'])->withInput();
         }
 
-        $verification->is_expired = true;
-        $verification->save();
+        $verification->update(['is_expired' => true]);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::firstOrCreate(
+            ['phone' => $request->phone],
+            ['name' => 'بدون‌نام']
+        );
 
-        if ($user) {
-            Auth::login($user);
-            session()->forget(['phone', 'blocked_until', 'last_code_sent_at']);
-            return redirect()->route('dashboard')->with('success', 'ورود با موفقیت انجام شد.');
-        } else {
-            session(['phone_to_register' => $request->phone]);
+        Auth::login($user);
+        session()->forget(['verify_phone']);
+
+        // ✅ لاگ ورود موفق
+        UserLogger::log('login', "ورود موفق کاربر با شماره: {$user->phone}");
+
+        if ($user->name === 'بدون‌نام') {
+            session(['phone_to_register' => $user->phone]);
             return redirect()->route('register-name.form');
         }
+
+        return redirect()->route('dashboard')->with('success', 'ورود موفقیت‌آمیز بود.');
     }
 
     public function showRegisterNameForm()
     {
         if (!session('phone_to_register')) {
-            return redirect()->route('phone.form')->with('error', 'لطفا ابتدا شماره موبایل خود را وارد کنید.');
+            return redirect()->route('phone.form')->with('error', 'ابتدا شماره موبایل را وارد کنید.');
         }
+
         return view('auth.register-name');
     }
 
     public function registerName(Request $request)
     {
         $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => 'required|string|max:255',
         ]);
 
         $phone = session('phone_to_register');
         if (!$phone) {
-            return redirect()->route('phone.form')->with('error', 'لطفا ابتدا شماره موبایل خود را وارد کنید.');
+            return redirect()->route('phone.form')->with('error', 'شماره در سشن نیست.');
         }
 
-        $user = User::create([
-            'phone' => $phone,
-            'name' => $request->name,
-        ]);
+        $user = User::where('phone', $phone)->first();
+        if ($user) {
+            $user->name = $request->name;
+            $user->save();
 
-        Auth::login($user);
-        session()->forget(['phone_to_register', 'phone', 'blocked_until', 'last_code_sent_at']);
+            Auth::login($user);
+            session()->forget(['phone_to_register', 'verify_phone']);
 
-        return redirect()->route('dashboard')->with('success', 'ثبت نام با موفقیت انجام شد.');
+            // ✅ لاگ ثبت‌نام نام
+            UserLogger::log('register_name', "ثبت نام با نام: {$request->name} و شماره: {$user->phone}");
+
+            return redirect()->route('dashboard')->with('success', 'ثبت نام کامل شد.');
+        }
+
+        return redirect()->route('phone.form')->with('error', 'کاربر یافت نشد.');
     }
 
     public function logout()
     {
+        if (Auth::check()) {
+            // ✅ لاگ خروج
+            UserLogger::log('logout', 'خروج کاربر با شماره: ' . Auth::user()->phone);
+        }
+
         Auth::logout();
         return redirect()->route('phone.form');
     }
