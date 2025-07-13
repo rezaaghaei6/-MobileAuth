@@ -1,39 +1,40 @@
-@extends('layouts.app')
+
+@extends('layouts.app') {{-- قالب پنل ادمین شما --}}
 
 @section('content')
-    <h2>اضافه کردن ادمین جدید</h2>
+    <h1>اضافه کردن ادمین جدید</h1>
 
     @if(session('success'))
-        <div style="color: green; margin-bottom: 15px;">
+        <div style="color: green;">
             {{ session('success') }}
+        </div>
+    @endif
+
+    @if($errors->any())
+        <div style="color: red;">
+            <ul>
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
         </div>
     @endif
 
     <form method="POST" action="{{ route('admin.store') }}">
         @csrf
-        <div>
-            <label>شماره موبایل (بدون صفر اول):</label>
-            <input type="text" name="phone" value="{{ old('phone') }}" required maxlength="10" pattern="9[0-9]{9}">
-            @error('phone') <div style="color: red;">{{ $message }}</div> @enderror
-        </div>
 
         <div>
-            <label>نام:</label>
-            <input type="text" name="name" value="{{ old('name') }}" required>
-            @error('name') <div style="color: red;">{{ $message }}</div> @enderror
+            <label for="phone">شماره موبایل:</label><br>
+            <input type="text" id="phone" name="phone" value="{{ old('phone') }}" placeholder="مثلاً ۹۱۲۳۴۵۶۷۸۹">
         </div>
 
-        <div>
-            <label>رمز عبور:</label>
-            <input type="password" name="password" required minlength="6">
-            @error('password') <div style="color: red;">{{ $message }}</div> @enderror
+        <div style="margin-top: 10px;">
+            <label for="name">نام (اختیاری):</label><br>
+            <input type="text" id="name" name="name" value="{{ old('name') }}">
         </div>
 
-        <div>
-            <label>تکرار رمز عبور:</label>
-            <input type="password" name="password_confirmation" required minlength="6">
+        <div style="margin-top: 15px;">
+            <button type="submit">اضافه کردن ادمین</button>
         </div>
-
-        <button type="submit">اضافه کردن</button>
     </form>
 @endsection

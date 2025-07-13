@@ -27,6 +27,7 @@ Route::get('/dashboard', fn() => view('dashboard'))->middleware('auth')->name('d
 
 // رفرش کپچا
 Route::get('/captcha-refresh', fn() => response()->json(['captcha' => Captcha::img()]))->name('captcha.refresh');
+Route::get('/admin/logs/captchas', [AdminLogController::class, 'captchaLogs'])->name('admin.logs.captchas');
 
 // ------------------------------------------------------------------
 // مسیرهای ادمین با middleware 'auth' و 'admin'

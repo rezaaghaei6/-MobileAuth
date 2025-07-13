@@ -12,7 +12,8 @@ class AdminMiddleware
     {
         $user = Auth::user();
 
-        if (!$user || !$user->is_admin) {
+        // بررسی اینکه کاربر لاگین کرده باشد و نقش admin داشته باشد
+        if (!$user || $user->role !== 'admin') {
             abort(403, 'شما به این بخش دسترسی ندارید.');
         }
 

@@ -7,7 +7,6 @@
     @if(auth()->user()->role === 'admin')
         <div style="margin-top: 30px;">
             <a href="{{ route('admin.logs.users') }}" class="btn btn-primary" style="margin-bottom: 10px; display: inline-block;">لاگ کاربران عادی</a>
-            <a href="{{ route('admin.logs.admins') }}" class="btn btn-secondary" style="margin-bottom: 10px; display: inline-block;">لاگ ادمین‌ها</a>
             <a href="{{ route('admin.logs.captcha') }}" class="btn btn-warning" style="margin-bottom: 10px; display: inline-block;">لاگ ریکپچا</a>
             <a href="{{ route('admin.add') }}" class="btn btn-success" style="margin-bottom: 10px; display: inline-block;">اضافه کردن ادمین جدید</a>
         </div>

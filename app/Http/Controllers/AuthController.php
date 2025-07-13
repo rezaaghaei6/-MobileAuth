@@ -14,17 +14,26 @@ class AuthController extends Controller
 {
     public function showPhoneForm()
     {
+        if (auth()->check()) {
+            return redirect()->route('dashboard');
+        }
         return view('auth.phone');
     }
 
     public function sendCode(Request $request)
     {
+        // ابتدا شماره را اصلاح می‌کنیم (حذف ۰ ابتدای شماره)
+        $input = $request->all();
+        $input['phone'] = ltrim($input['phone'], '0');
+        $request->merge($input);
+
+        // اعتبارسنجی با شماره اصلاح شده
         $request->validate([
             'phone' => 'required|regex:/^9\d{9}$/',
             'captcha' => 'required|captcha',
         ]);
 
-        $phone = ltrim($request->phone, '0');
+        $phone = $request->phone;
 
         $recentCode = VerificationCode::where('phone', $phone)
             ->where('created_at', '>=', now()->subMinutes(10))
@@ -34,9 +43,6 @@ class AuthController extends Controller
             $remainingSeconds = $recentCode->created_at->addMinutes(10)->diffInSeconds(now());
             $minutes = floor($remainingSeconds / 60);
             $seconds = $remainingSeconds % 60;
-
-            // لاگ تلاش برای ارسال کد در فاصله محدود
-            UserLogger::log('send_code_blocked', "ارسال مجدد کد برای شماره $phone محدود شد.");
 
             return back()->withErrors([
                 'phone' => "برای این شماره قبلاً کد ارسال شده است. لطفاً {$minutes} دقیقه و {$seconds} ثانیه دیگر صبر کنید."
@@ -54,8 +60,8 @@ class AuthController extends Controller
 
         session(['verify_phone' => $phone]);
 
-        // ✅ لاگ ارسال کد تأیید
-        UserLogger::log('send_code', "کد $code برای شماره $phone ارسال شد.");
+        // لاگ ارسال کد تأیید
+        UserLogger::log('send_code', "ارسال کد برای شماره: $phone");
 
         return redirect()->route('verify.form')->with('success', 'کد تأیید ارسال شد.');
     }
@@ -84,7 +90,7 @@ class AuthController extends Controller
             ->first();
 
         if (!$verification) {
-            // ✅ لاگ تلاش ناموفق تأیید کد
+            // لاگ تلاش ناموفق تأیید کد
             UserLogger::log('verify_failed', "کد اشتباه یا منقضی برای شماره {$request->phone}");
             return back()->withErrors(['code' => 'کد تایید نامعتبر، منقضی یا استفاده شده است.'])->withInput();
         }
@@ -99,7 +105,7 @@ class AuthController extends Controller
         Auth::login($user);
         session()->forget(['verify_phone']);
 
-        // ✅ لاگ ورود موفق
+        // لاگ ورود موفق
         UserLogger::log('login', "ورود موفق کاربر با شماره: {$user->phone}");
 
         if ($user->name === 'بدون‌نام') {
@@ -138,7 +144,7 @@ class AuthController extends Controller
             Auth::login($user);
             session()->forget(['phone_to_register', 'verify_phone']);
 
-            // ✅ لاگ ثبت‌نام نام
+            // لاگ ثبت‌نام نام
             UserLogger::log('register_name', "ثبت نام با نام: {$request->name} و شماره: {$user->phone}");
 
             return redirect()->route('dashboard')->with('success', 'ثبت نام کامل شد.');
@@ -150,7 +156,7 @@ class AuthController extends Controller
     public function logout()
     {
         if (Auth::check()) {
-            // ✅ لاگ خروج
+            // لاگ خروج
             UserLogger::log('logout', 'خروج کاربر با شماره: ' . Auth::user()->phone);
         }
 

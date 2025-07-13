@@ -17,5 +17,15 @@ class User extends Authenticatable
         'role',
     ];
 
-    // اگر بخواهی نقش‌های پیش‌فرض یا helper method اضافه کنی می‌توانی اینجا اضافه کنی
+    // Helper method برای بررسی admin بودن
+    public function isAdmin()
+    {
+        return $this->role === 'admin';
+    }
+
+    // Accessor برای سازگاری با کدهای قدیمی
+    public function getIsAdminAttribute()
+    {
+        return $this->role === 'admin';
+    }
 }

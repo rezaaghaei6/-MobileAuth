@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\User;
-use Illuminate\Support\Facades\Hash;
 
 class AdminUserController extends Controller
 {
@@ -19,13 +18,13 @@ class AdminUserController extends Controller
         $request->validate([
             'phone' => ['required', 'regex:/^9\d{9}$/', 'unique:users,phone'],
             'name' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'string', 'min:6', 'confirmed'],
+            // 'password' => ['required', 'string', 'min:6', 'confirmed'], // حذف شد
         ]);
 
         User::create([
             'phone' => $request->phone,
             'name' => $request->name,
-            'password' => Hash::make($request->password),
+            'password' => null,  // یا خالی بذار
             'role' => 'admin',
         ]);
 
